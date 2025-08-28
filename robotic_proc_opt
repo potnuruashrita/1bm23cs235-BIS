@@ -1,0 +1,126 @@
+import random
+from typing import List, Dict, Tuple
+
+
+TASK_DURATIONS: Dict[str, float] = {
+    "Pick": 3.0,
+    "Place": 2.5,
+    "Screw": 4.0,
+    "Inspect": 2.0,
+    "Label": 1.5,
+    "Pack": 3.5,
+}
+SETUP_PENALTY: Dict[Tuple[str, str], float] = {
+    ("Pick", "Place"): 0.4, ("Place", "Screw"): 0.8, ("Screw", "Inspect"): 0.6,
+    ("Inspect", "Label"): 0.3, ("Label", "Pack"): 0.7,
+   
+    ("Pick", "Screw"): 1.2, ("Pick", "Inspect"): 0.9, ("Pick", "Label"): 0.9, ("Pick", "Pack"): 1.1,
+    ("Place", "Inspect"): 0.5, ("Place", "Label"): 0.5, ("Place", "Pack"): 0.9,
+    ("Screw", "Place"): 1.0, ("Screw", "Label"): 0.7, ("Screw", "Pack"): 1.0,
+    ("Inspect", "Place"): 0.7, ("Inspect", "Pack"): 0.8, ("Inspect", "Screw"): 0.9,
+    ("Label", "Inspect"): 0.6, ("Label", "Screw"): 0.9, ("Label", "Place"): 0.8, ("Label", "Pick"): 1.0,
+    ("Pack", "Label"): 0.6, ("Pack", "Inspect"): 0.9, ("Pack", "Screw"): 1.2, ("Pack", "Place"): 1.0,
+}
+
+def schedule_cost(order: List[str]) -> float:
+    """Total time = sum of durations + sequence-dependent penalties."""
+    total = 0.0
+    for i, task in enumerate(order):
+        total += TASK_DURATIONS[task]
+        if i > 0:
+            prev = order[i - 1]
+            total += SETUP_PENALTY.get((prev, task), 0.0)  
+    return total
+
+
+def init_population(tasks: List[str], size: int) -> List[List[str]]:
+    pop = []
+    for _ in range(size):
+        chrom = tasks[:]
+        random.shuffle(chrom)
+        pop.append(chrom)
+    return pop
+
+def tournament_select(pop: List[List[str]], k: int) -> List[str]:
+    """k-way tournament selection (minimization)."""
+    cand = random.sample(pop, k)
+    cand.sort(key=schedule_cost)
+    return cand[0][:]
+
+def order_crossover(p1: List[str], p2: List[str]) -> Tuple[List[str], List[str]]:
+    """Order crossover (OX) for permutations."""
+    n = len(p1)
+    a, b = sorted(random.sample(range(n), 2))
+    def ox(parent_a, parent_b):
+        child = [None]*n
+        
+        child[a:b+1] = parent_a[a:b+1]
+        
+        fill = [g for g in parent_b if g not in child]
+        j = 0
+        for i in range(n):
+            if child[i] is None:
+                child[i] = fill[j]
+                j += 1
+        return child
+    return ox(p1, p2), ox(p2, p1)
+
+def swap_mutation(ch: List[str], rate: float) -> None:
+    if random.random() < rate:
+        i, j = random.sample(range(len(ch)), 2)
+        ch[i], ch[j] = ch[j], ch[i]
+
+def evolve(
+    tasks: List[str],
+    pop_size: int = 80,
+    generations: int = 300,
+    tournament_k: int = 4,
+    crossover_rate: float = 0.9,
+    mutation_rate: float = 0.2,
+    elitism: int = 2,
+    verbose: bool = True
+):
+    pop = init_population(tasks, pop_size)
+    best = min(pop, key=schedule_cost)
+    best_score = schedule_cost(best)
+    if verbose:
+        print(f"Gen 0 | best = {best_score:.3f} s | {best}")
+
+    for g in range(1, generations + 1):
+        new_pop = []
+        
+        pop_sorted = sorted(pop, key=schedule_cost)
+        new_pop.extend([ch[:] for ch in pop_sorted[:elitism]])
+
+        # Create offspring
+        while len(new_pop) < pop_size:
+            p1 = tournament_select(pop, tournament_k)
+            p2 = tournament_select(pop, tournament_k)
+            if random.random() < crossover_rate:
+                c1, c2 = order_crossover(p1, p2)
+            else:
+                c1, c2 = p1[:], p2[:]
+            swap_mutation(c1, mutation_rate)
+            swap_mutation(c2, mutation_rate)
+            new_pop.append(c1)
+            if len(new_pop) < pop_size:
+                new_pop.append(c2)
+
+        pop = new_pop
+        cur_best = min(pop, key=schedule_cost)
+        cur_score = schedule_cost(cur_best)
+        if cur_score < best_score:
+            best, best_score = cur_best, cur_score
+
+        if verbose and (g % 25 == 0 or g == generations):
+            print(f"Gen {g} | best = {best_score:.3f} s | {best}")
+
+    return best, best_score
+
+if __name__ == "__main__":
+    random.seed(42)
+    tasks = list(TASK_DURATIONS.keys())
+    best_order, best_time = evolve(tasks, pop_size=120, generations=250, verbose=True)
+    print("\nBest found sequence:")
+    print(best_order)
+    print(f"Estimated total time: {best_time:.3f} s")
