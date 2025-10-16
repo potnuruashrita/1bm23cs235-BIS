@@ -1,0 +1,44 @@
+import numpy as np
+
+# Objective function (example: minimize sphere function)
+def fitness(x):
+    return np.sum(x**2)
+
+# GA parameters
+pop_size = 20
+chrom_length = 5
+generations = 50
+mutation_rate = 0.1
+
+# Initialization: random population in [-10, 10]
+population = np.random.uniform(-10, 10, (pop_size, chrom_length))
+
+for gen in range(generations):
+    fitness_values = np.array([fitness(ind) for ind in population])
+    # Selection (roulette wheel)
+    fitness_inv = 1 / (fitness_values + 1e-6)
+    probs = fitness_inv / np.sum(fitness_inv)
+    parents_idx = np.random.choice(pop_size, size=pop_size, p=probs)
+    parents = population[parents_idx]
+    
+    # Crossover (single point)
+    offspring = []
+    for i in range(0, pop_size, 2):
+        p1, p2 = parents[i], parents[(i+1) % pop_size]
+        point = np.random.randint(1, chrom_length)
+        child1 = np.concatenate((p1[:point], p2[point:]))
+        child2 = np.concatenate((p2[:point], p1[point:]))
+        offspring.extend([child1, child2])
+    offspring = np.array(offspring[:pop_size])
+    
+    # Mutation
+    mutations = np.random.rand(pop_size, chrom_length) < mutation_rate
+    mutation_values = np.random.uniform(-1, 1, (pop_size, chrom_length))
+    offspring = offspring + mutations * mutation_values
+    
+    population = offspring
+
+# Best solution
+best_idx = np.argmin([fitness(ind) for ind in population])
+print("Best solution:", population[best_idx])
+print("Best fitness:", fitness(population[best_idx]))
